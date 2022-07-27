@@ -1,7 +1,7 @@
 --[[
 author: samuelagent
 
-This wrapper makes working with DataStoreService easier. It follows a similar style to DataStore in that referenced data is cached and saved with backups through
+This wrapper makes working with DataStoreService easier. It follows a similar style to DataStore2 in that referenced data is cached and saved with backups through
 OrderedDataStores. Use case also extends beyond saving player data, methods are provided for handling these caches and saves.
 
 
