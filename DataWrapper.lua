@@ -118,6 +118,9 @@ DataWrapper.PlayerKeyPrefix = "User"
 DataWrapper.AttemptDelay = 0.5
 DataWrapper.AttemptCount = 3
 
+DataWrapper.AutoSaveIncrement = 300 -- Seconds | -1 To disable autosaves
+
+DataWrapper.DebugMode = true
 DataWrapper.LoadDataInstantly = true -- Whether to load data immediately or after first :Get() call
 
 local DataClass  = {}
@@ -203,7 +206,7 @@ function DataClass:Set(Value)
 end
 
 function DataClass:Save()
-	if not self.Changed then warn("DataStore did not save because: DATA WAS NEVER UPDATED") return end
+	if not self.Changed then if DataWrapper.DebugMode then warn(self.Key, self.Scope, "> Was not saved because it was not changed") end return end
 	self.SavingMethod:SetOrderedDataStore(self.Value)
 	self.Changed = false
 end
@@ -299,7 +302,7 @@ function OrderedDataStores:SetOrderedDataStore(Value)
 	end
 
 	if not Success then
-		warn("DataStore did not save because: FAILED TO SAVE NEW DATASTORE")
+		if self.DebugMode then warn(self.Key, self.Scope, "> Was not saved because of an internal error") end
 		return false, Error
 	end
 
@@ -313,7 +316,7 @@ function OrderedDataStores:SetOrderedDataStore(Value)
 	end
 
 	if not Success then
-		warn("DataStore did not save because: FAILED TO SAVE NEW KEY INDEX")
+		if self.DebugMode then warn(self.Key, self.Scope, "> Was not saved because of an internal error") end
 		return false, Error
 	else
 		self.MostRecentKey = Key
@@ -324,6 +327,8 @@ end
 
 function OrderedDataStores.New(Key, Scope)
 	local Data = {
+		["Key"] = Key,
+		["Scope"] = Scope,
 		["DataStore"] = Scope and DataStoreService:GetDataStore(Key, Scope or "") or GlobalDataStore,
 		["OrderedDataStore"] = DataStoreService:GetOrderedDataStore(Key, Scope)
 	}
@@ -331,15 +336,33 @@ function OrderedDataStores.New(Key, Scope)
 	return setmetatable(Data, OrderedDataStores)
 end
 
---// Events
+--// Externals
+
+task.spawn(function()
+	if DataWrapper.AutoSaveIncrement <= 0 then return end
+	while task.wait(DataWrapper.AutoSaveIncrement) do
+		for UserId in pairs(CurrentGameUserIds) do
+			local PlayerKey = DataWrapper.PlayerKeyFromUserId(UserId)
+			local PlayerObject = CachedDataObjects[PlayerKey]
+			
+			task.spawn(function()
+				if PlayerObject then
+					for Scope, DataObject in pairs(PlayerObject) do
+						DataObject:Save()	
+					end
+				end				
+			end)
+		end
+	end
+end)
 
 Players.PlayerRemoving:Connect(function(Player)
-	local PlayerKey = DataWrapper.GetDataStoreKey(Player.UserId)
+	local PlayerKey = DataWrapper.PlayerKeyFromUserId(Player.UserId)
 	local PlayerObject = CachedDataObjects[PlayerKey]
 	
 	if PlayerObject then
 		for Scope, DataObject in pairs(PlayerObject) do
-			if DataWrapper.SaveOnPlayerLeave and DataObject.Changed then print("Saving Data") DataObject:Save() end
+			if DataWrapper.SaveOnPlayerLeave then DataObject:Save() end
 			DataObject:Remove()			
 		end
 	end
