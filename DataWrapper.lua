@@ -54,7 +54,7 @@ function CloneTable(Original)
 	local Copy = table.clone(Original)
 	for i, v in pairs(Copy) do
 		if type(v) == "table" then
-			Copy[i] = CloneTable(Original)
+			Copy[i] = CloneTable(v)
 		end
 	end
 	return Copy
