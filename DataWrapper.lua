@@ -1,7 +1,7 @@
 --[[
 author: samuelagent
 
-This wrapper makes working with DataStoreService easier. It follows a similar style to DataStore2 in that referenced data is cached and saved with backups through
+This wrapper makes working with DataStoreService easier. It follows a similar style to DataWrapper in that referenced data is cached and saved with backups through
 OrderedDataStores. Use case also extends beyond saving player data, methods are provided for handling these caches and saves.
 
 
@@ -43,7 +43,6 @@ local Players = game:GetService("Players")
 
 --// Runtime
 
-local CachedPlayerObjects = {}
 local CurrentGameUserIds = {}
 local CachedDataObjects = {}
 
@@ -51,15 +50,31 @@ local CachedDataObjects = {}
 
 local GlobalDataStore = DataStoreService:GetGlobalDataStore()
 
-local function CloneTable(Original)
-	local NewTable = {}
-	for i, v in pairs(Original) do
+function CloneTable(Original)
+	local Copy = table.clone(Original)
+	for i, v in pairs(Copy) do
 		if type(v) == "table" then
-			v = CloneTable(v)
+			Copy[i] = CloneTable(Original)
 		end
-		NewTable[i] = v
 	end
-	return NewTable
+	return Copy
+end
+
+local function FillTable(Original, Reference)
+	Original = CloneTable(Original)
+	Reference = CloneTable(Reference)
+	
+	for i, v in pairs(Reference) do
+		if type(v) == "table" then
+			if Original[i] == nil then
+				Original[i] = v
+			elseif type(Original[i]) == "table" then
+				FillTable(Original[i], v)
+			end			
+		end
+	end
+	
+	return Original
 end
 
 local function ClearObject(Object)
@@ -146,7 +161,7 @@ function DataWrapper.GetRawData(Key, Scope)
 	return Data, DataStore, Success
 end
 
-function DataWrapper.GetData(Name, Scope, DefaultData)
+function DataWrapper.GetData(Name, Scope)
 	local Key = DataWrapper.GetDataStoreKey(Name)
 	local DataObject = DataWrapper.GetObjectCache(Key, Scope)
 
@@ -159,7 +174,7 @@ end
 
 function DataWrapper.GDPR(UserId)
 	local Key = DataWrapper.GetDataStoreKey(UserId)
-	
+
 end
 
 --// DataClass (Data Object)
@@ -171,25 +186,20 @@ end
 
 function DataClass:Get(DefaultValue)
 	local Data = (self.Value ~= DataWrapper.NoDataHolder and self.Value) or self:GetRaw()
-	
+
 	if type(Data) == "table" and type(DefaultValue) == "table" then
-		for i, v in pairs(DefaultValue) do
-			if Data[i] == nil then
-				Data[i] = v
-			end
-		end
+		Data = FillTable(Data, DefaultValue)
 	end
-	
+
 	if DataWrapper.SetCacheToFirstDefault and Data == DataWrapper.NoDataHolder then
 		self.Value = Data
 	end
-	
 	return Data ~= DataWrapper.NoDataHolder and Data or DefaultValue
 end
 
 function DataClass:Set(Value)
+	self.Changed = self.Value ~= Value
 	self.Value = Value
-	self.Changed = true
 end
 
 function DataClass:Save()
@@ -205,8 +215,6 @@ function DataClass:Increment(Number)
 end
 
 function DataClass:Remove()
-	if self.UserId then CachedPlayerObjects[self.UserId] = nil end
-	
 	if CachedDataObjects[self.Key] then
 		CachedDataObjects[self.Key][self.Scope or DataWrapper.GlobalScopeKey] = nil
 	end
@@ -222,25 +230,23 @@ function DataClass.New(Key, Scope)
 		["UserId"] = nil,
 		["Changed"] = false,
 	}
-	
+
 	setmetatable(NewDataObject, DataClass)
-	
+
 	if DataWrapper.LoadDataInstantly then
 		NewDataObject.Value = NewDataObject:GetRaw()	
 	end
-	
+
 	if not CachedDataObjects[Key] then CachedDataObjects[Key] = {} end
-	
+	CachedDataObjects[Key][Scope or DataWrapper.GlobalScopeKey] = NewDataObject
+
 	local PlayerKeyPrefix = string.sub(Key, 1, #DataWrapper.PlayerKeyPrefix)
 	local PlayerKeyUserId = tonumber(string.sub(Key, #DataWrapper.PlayerKeyPrefix + 1, #Key))
-	
+
 	if PlayerKeyPrefix == DataWrapper.PlayerKeyPrefix then
 		NewDataObject.UserId = PlayerKeyUserId
-		if PlayerOfUserIdInServer(PlayerKeyUserId) then
-			CachedPlayerObjects[PlayerKeyUserId] = NewDataObject
-		end
 	end
-	
+
 	return NewDataObject
 end
 
@@ -257,7 +263,7 @@ function OrderedDataStores:GetOrderedDataStore()
 			task.wait(DataWrapper.AttemptDelay)
 		end
 	end
-	
+
 	self.MostRecentKey = Data and Data.key or 0
 
 	if not Success then
@@ -271,7 +277,7 @@ function OrderedDataStores:GetOrderedDataStore()
 				task.wait(DataWrapper.AttemptDelay)
 			end
 		end
-		
+
 		return Success and true, Data
 	else
 		return true, nil
@@ -280,7 +286,7 @@ end
 
 function OrderedDataStores:SetOrderedDataStore(Value)
 	local Key = (self.MostRecentKey or 0) + 1
-	
+
 	local Success, Error
 
 	for count = 1, DataWrapper.AttemptCount do
@@ -296,7 +302,7 @@ function OrderedDataStores:SetOrderedDataStore(Value)
 		warn("DataStore did not save because: FAILED TO SAVE NEW DATASTORE")
 		return false, Error
 	end
-	
+
 	for count = 1, DataWrapper.AttemptCount do
 		Success, Error = pcall(function()
 			self.OrderedDataStore:SetAsync(Key, os.time())
@@ -321,19 +327,22 @@ function OrderedDataStores.New(Key, Scope)
 		["DataStore"] = Scope and DataStoreService:GetDataStore(Key, Scope or "") or GlobalDataStore,
 		["OrderedDataStore"] = DataStoreService:GetOrderedDataStore(Key, Scope)
 	}
-	
+
 	return setmetatable(Data, OrderedDataStores)
 end
 
 --// Events
 
 Players.PlayerRemoving:Connect(function(Player)
-	local PlayerObject = CachedPlayerObjects[Player.UserId]
+	local PlayerKey = DataWrapper.GetDataStoreKey(Player.UserId)
+	local PlayerObject = CachedDataObjects[PlayerKey]
+	
 	if PlayerObject then
-		if DataWrapper.SaveOnPlayerLeave and PlayerObject.Changed then CachedPlayerObjects[Player.UserId]:Save() end
-		PlayerObject:Remove()
+		for Scope, DataObject in pairs(PlayerObject) do
+			if DataWrapper.SaveOnPlayerLeave and DataObject.Changed then print("Saving Data") DataObject:Save() end
+			DataObject:Remove()			
+		end
 	end
-	CachedPlayerObjects[Player.UserId] = nil
 	CurrentGameUserIds[Player.UserId] = nil
 end)
 
