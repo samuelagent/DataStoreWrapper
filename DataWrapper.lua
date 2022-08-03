@@ -168,16 +168,12 @@ function DataWrapper.GetData(Name, Scope)
 	local Key = DataWrapper.GetDataStoreKey(Name)
 	local DataObject = DataWrapper.GetObjectCache(Key, Scope)
 
-	if DataObject then
-		return DataObject
-	else
-		return DataClass.New(Key, Scope)
-	end
+	return DataObject or DataClass.New(Key, Scope)
 end
 
 function DataWrapper.GDPR(UserId)
 	local Key = DataWrapper.GetDataStoreKey(UserId)
-
+	-- TODO
 end
 
 --// DataClass (Data Object)
