@@ -341,13 +341,9 @@ task.spawn(function()
 			local PlayerKey = DataWrapper.PlayerKeyFromUserId(UserId)
 			local PlayerObject = CachedDataObjects[PlayerKey]
 			
-			task.spawn(function()
-				if PlayerObject then
-					for Scope, DataObject in pairs(PlayerObject) do
-						DataObject:Save()	
-					end
-				end				
-			end)
+			for _, DataObject in pairs(PlayerObject or {}) do
+				task.spawn(DataWrapper.Save, DataObject)
+			end
 		end
 	end
 end)
