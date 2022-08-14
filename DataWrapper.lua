@@ -62,18 +62,22 @@ end
 
 local function FillTable(Original, Reference)
 	Original = CloneTable(Original)
-	Reference = CloneTable(Reference)
-	
+	Reference = CloneTable(Reference)	
+
 	for i, v in pairs(Reference) do
 		if type(v) == "table" then
 			if Original[i] == nil then
 				Original[i] = v
 			elseif type(Original[i]) == "table" then
-				FillTable(Original[i], v)
-			end			
+				Original[i] = FillTable(Original[i], v)
+			end
+		else
+			if Original[i] == nil then
+				print(i, v)
+				Original[i] = v
+			end
 		end
 	end
-	
 	return Original
 end
 
