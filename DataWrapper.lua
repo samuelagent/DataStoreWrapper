@@ -187,15 +187,15 @@ function DataClass:GetRaw()
 	return Data
 end
 
-function DataClass:Get(DefaultValue)
+function DataClass:Get(DefaultValue, PerserveData)
 	local Data = (self.Value ~= DataWrapper.NoDataHolder and self.Value) or self:GetRaw()
 
-	if type(Data) == "table" and type(DefaultValue) == "table" then
+	if type(Data) == "table" and type(DefaultValue) == "table" and not PerserveData then -- PerserveData means the table will not be filled
 		Data = FillTable(Data, DefaultValue)
 	end
 
-	if DataWrapper.SetCacheToFirstDefault and Data == DataWrapper.NoDataHolder then
-		self.Value = Data
+	if DataWrapper.SetCacheToFirstDefault and DefaultValue and Data == DataWrapper.NoDataHolder then
+		self.Value = DefaultValue
 	end
 	return Data ~= DataWrapper.NoDataHolder and Data or DefaultValue
 end
